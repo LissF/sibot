@@ -1,32 +1,42 @@
 package ua.org.tenletters.sibot;
 
-import java.io.IOException;
-import java.io.PrintWriter;
+import com.mashape.unirest.http.HttpResponse;
+import com.mashape.unirest.http.JsonNode;
+import com.mashape.unirest.http.Unirest;
+import com.mashape.unirest.http.exceptions.UnirestException;
+import org.apache.http.util.TextUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.safety.Whitelist;
+import org.jsoup.select.Elements;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.PrintWriter;
 
-import com.mashape.unirest.http.HttpResponse;
-import com.mashape.unirest.http.JsonNode;
-import com.mashape.unirest.http.Unirest;
-import com.mashape.unirest.http.exceptions.UnirestException;
-import org.json.JSONArray;
-import org.json.JSONObject;
+public final class BotServlet extends HttpServlet {
+    private static final long serialVersionUID = 5L;
 
-public class BotServlet extends HttpServlet {
-    private static final long serialVersionUID = 3L;
+    private Thread botThread;
 
-    private Thread bot;
+    private String errorMessageOnFace = "";
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         final PrintWriter out = response.getWriter();
-        out.println("Bot is " + (bot.isAlive() ? "alive!" : "dead!"));
-        if (!bot.isAlive() || bot.isInterrupted()) {
+        out.println("Bot is " + (botThread.isAlive() ? "alive!" : "dead!"));
+        if (!botThread.isAlive() || botThread.isInterrupted()) {
             out.println("Restarting the bot");
             startBot();
+        }
+        if (!TextUtils.isEmpty(errorMessageOnFace)) {
+            out.println("Last error: " + errorMessageOnFace);
         }
     }
 
@@ -40,15 +50,18 @@ public class BotServlet extends HttpServlet {
     }
 
     private void startBot() {
-        bot = new Thread(new SIBot("133372591:AAHWbe8g0m6Dwxz7UZLC9DkQHM9WGSjXOZ8"));
-        bot.start();
+        botThread = new Thread(new SIBot("133372591:AAHWbe8g0m6Dwxz7UZLC9DkQHM9WGSjXOZ8"));
+        botThread.start();
     }
 
-    private static final class SIBot implements Runnable {
-        private final String endpoint  = "https://api.telegram.org/bot";
+    private final class SIBot implements Runnable {
+        private static final int MAX_ERROR_REPEAT = 3;
+
+        private final String endpoint = "https://api.telegram.org/bot";
         private final String token;
 
         private String lastError = "";
+        private int errorCounter = 0;
 
         public SIBot(String token) {
             this.token = token;
@@ -57,7 +70,8 @@ public class BotServlet extends HttpServlet {
 
         public HttpResponse<JsonNode> sendMessage(Integer chatId, String text) throws UnirestException {
             System.out.println("[TELEGRAM] Sending message");
-            return Unirest.post(endpoint + token + "/sendMessage").field("chat_id", chatId).field("text", text).asJson();
+            return Unirest.post(endpoint + token + "/sendMessage").field("chat_id", chatId).field("text", text)
+                    .asJson();
         }
 
         public HttpResponse<JsonNode> getUpdates(Integer offset) throws UnirestException {
@@ -68,11 +82,16 @@ public class BotServlet extends HttpServlet {
             try {
                 runBotLoop();
             } catch (Exception e) {
-                // TODO: log error
-                final String error = e.toString();
-                System.out.println("[TELEGRAM] Error: " + error);
-                if (!lastError.equals(error)) {
-                    lastError = error;
+                errorMessageOnFace = e.toString();
+
+                System.out.println("[TELEGRAM] Error: " + errorMessageOnFace);
+                if (MAX_ERROR_REPEAT < errorCounter) {
+                    if (lastError.equals(errorMessageOnFace)) {
+                        ++errorCounter;
+                    } else {
+                        lastError = errorMessageOnFace;
+                        errorCounter = 0;
+                    }
                     run();
                 }
             }
@@ -97,25 +116,41 @@ public class BotServlet extends HttpServlet {
                     System.out.println("[TELEGRAM] Got something");
                     for (int i = 0; i < responses.length(); ++i) {
                         final JSONObject message = responses.getJSONObject(i).getJSONObject("message");
-
-                        final int chat_id = message.getJSONObject("chat").getInt("id");
-
-                        final String username = message.getJSONObject("chat").optString("username", "unknown");
-
+                        final int chatId = message.getJSONObject("chat").getInt("id");
                         final String text = message.optString("text", "");
 
                         if (text.contains("/start")) {
-                            final String reply = "Hi, this is an example bot\n" + "Your chat_id is " + chat_id + "\n" 
-                                + "Your username is " + username;
-                            sendMessage(chat_id, reply);
-                        } else if (text.contains("/echo")) {
-                            sendMessage(chat_id, text);
-                        } else if (text.contains("/toupper")) {
-                            final String param = text.substring("/toupper".length(), text.length());
-                            sendMessage(chat_id, param.toUpperCase());
+                            final String reply = "Версия бота: 1.0\n/ask - случайная тема свояка из базы db.chgk.info";
+                            sendMessage(chatId, reply);
+                        } else if (text.contains("/ask")) {
+                            new Thread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    sendRandomQuestions(chatId, 1);
+                                }
+                            }).start();
                         }
                     }
                 }
+            }
+        }
+
+        private void sendRandomQuestions(final int chatId, final int amount) {
+            try {
+                final Document doc = Jsoup.connect("http://db.chgk.info/random/from_2000-01-01/answers/types5/limit"
+                        + amount).get();
+                final Elements questions = doc.getElementsByClass("random_question");
+                for (Element question : questions) {
+                    sendMessage(
+                            chatId,
+                            Jsoup.clean(question.toString(), "", Whitelist.none(),
+                                    new Document.OutputSettings().prettyPrint(false)).replace("&nbsp;", "")
+                    );
+                }
+            } catch (IOException e) {
+                System.out.println("[TELEGRAM] Can not get question! " + e.toString());
+            } catch (UnirestException e) {
+                System.out.println("[TELEGRAM] Can not send question! " + e.toString());
             }
         }
     }
