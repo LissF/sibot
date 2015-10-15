@@ -106,7 +106,7 @@ public class BotServlet extends HttpServlet {
 
                         int chat_id = message.getJSONObject("chat").getInt("id");
 
-                        String username = message.getJSONObject("chat").getString("username");
+                        String username = message.getJSONObject("chat").optString("username", "unknown");
 
                         String text = message.optString("text", "");
 
