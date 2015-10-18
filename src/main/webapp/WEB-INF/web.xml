@@ -6,6 +6,10 @@
         <servlet-name>botServlet</servlet-name>
         <servlet-class>ua.org.tenletters.sibot.BotServlet</servlet-class>
     </servlet>
+  
+    <listener>
+       <listener-class>ua.org.tenletters.sibot.ContextListener</listener-class>
+    </listener>
  
     <servlet-mapping>
         <servlet-name>botServlet</servlet-name>
