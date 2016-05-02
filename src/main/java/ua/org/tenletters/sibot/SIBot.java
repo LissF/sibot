@@ -60,6 +60,14 @@ public class SIBot {
         public HttpResponse<JsonNode> sendMessage(final Integer chatId, final String text) throws UnirestException {
             System.out.println("[SIBOT] Sending message");
             return Unirest.post(endpoint + token + "/sendMessage").field("chat_id", chatId).field("text", text)
+              .field("reply_markup", "{\"keyboard\":[[{\"text\":\"Получить тему (/ask)\"}]],\"resize_keyboard\":true}")
+                    .asJson();
+        }
+  
+        public HttpResponse<JsonNode> answerInline(final String inlineId) throws UnirestException {
+            System.out.println("[SIBOT] Answering on inlined request");
+            return Unirest.post(endpoint + token + "/answerInlineQuery").field("inline_query_id", inlineId)
+                .field("results", "[]").field("switch_pm_text", "Получить тему")
                     .asJson();
         }
 
@@ -85,7 +93,6 @@ public class SIBot {
                     response = getUpdates(last_update_id++);
                 } catch (UnirestException e) {
                     System.out.println("[SIBOT] Can not get updates: " + e);
-                    // TODO: wait some time before repeat
                 }
 
                 if (response != null && response.getStatus() == 200) {
@@ -99,23 +106,37 @@ public class SIBot {
                     System.out.println("[SIBOT] Got something");
                     for (int i = 0; i < responses.length(); ++i) {
                         final JSONObject message = responses.getJSONObject(i).optJSONObject("message");
-                        if (message == null) {
-                            continue;
-                        }
-                        final int chatId = message.getJSONObject("chat").getInt("id");
-                        final String text = message.optString("text", "");
+                        final JSONObject inline = responses.getJSONObject(i).optJSONObject("inline_query");
+                        
+                        if (message != null) {
+                            final int chatId = message.getJSONObject("chat").getInt("id");
+                            final String text = message.optString("text", "");
 
-                        if (!text.isEmpty()) {
-                            executor.execute(new Runnable() {
-                                @Override
-                                public void run() {
-                                    if (text.contains("/start")) {
-                                        onStartCommand(chatId);
-                                    } else if (text.contains("/ask")) {
-                                        onAskCommand(chatId);
+                            if (!text.isEmpty()) {
+                                executor.execute(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        if (text.contains("/start")) {
+                                            onStartCommand(chatId);
+                                        } else if (text.contains("/ask")) {
+                                            onAskCommand(chatId);
+                                        }
                                     }
-                                }
-                            });
+                                });
+                            }
+                        }
+                      
+                        if (inline != null) {
+                            final String inlineId = inline.optString("id", "");
+                            
+                            if (!inlineId.isEmpty()) {
+                                executor.execute(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        onInline(inlineId);
+                                    }
+                                });
+                            }
                         }
                     }
                 }
@@ -124,8 +145,22 @@ public class SIBot {
 
         private void onStartCommand(final int chatId) {
             try {
-                final String reply = "Версия бота: 1.0\n/ask - случайная тема свояка из базы db.chgk.info";
+                final String reply = "Версия бота: 1.2.0\n/ask - случайная тема свояка из базы db.chgk.info";
                 sendMessage(chatId, reply);
+            } catch (UnirestException e) {
+                System.out.println("[SIBOT] Can not send question! " + e.toString());
+            }
+        }
+
+        private void onInline(final String inlineId) {
+            try {
+                answerInline(inlineId);
+                ++counter;
+                if (!cacheIsLocked && CACHE_MIN_SAFE_SIZE > cache.size()) {
+                    updateCache(CACHE_UPDATE_PORTION);
+                }
+            } catch (IOException e) {
+                System.out.println("[SIBOT] Can not get question! " + e.toString());
             } catch (UnirestException e) {
                 System.out.println("[SIBOT] Can not send question! " + e.toString());
             }
