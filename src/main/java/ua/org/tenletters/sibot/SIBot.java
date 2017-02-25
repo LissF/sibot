@@ -12,6 +12,9 @@ import org.jsoup.nodes.Element;
 import org.jsoup.safety.Whitelist;
 import org.jsoup.select.Elements;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
@@ -21,6 +24,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class SIBot {
+
+        private static final Logger log = LogManager.getLogger("SIBot");
 
         private static final int THREADS_COUNT = 8;
   
@@ -42,7 +47,7 @@ public class SIBot {
         public SIBot(final String token) {
             this.token = token;
             this.executor = Executors.newFixedThreadPool(THREADS_COUNT, new DaemonThreadFactory());
-            System.out.println("[SIBOT] Created Bot");
+            log.debug("[SIBOT] Created Bot");
         }
   
         public boolean isAlive() {
@@ -58,14 +63,14 @@ public class SIBot {
         }
 
         public HttpResponse<JsonNode> sendMessage(final Integer chatId, final String text) throws UnirestException {
-            System.out.println("[SIBOT] Sending message");
+            log.debug("[SIBOT] Sending message");
             return Unirest.post(endpoint + token + "/sendMessage").field("chat_id", chatId).field("text", text)
               .field("reply_markup", "{\"keyboard\":[[{\"text\":\"Получить тему (/ask)\"}]],\"resize_keyboard\":true}")
                     .asJson();
         }
   
         public HttpResponse<JsonNode> answerInline(final String inlineId) throws UnirestException {
-            System.out.println("[SIBOT] Answering on inlined request");
+            log.debug("[SIBOT] Answering on inlined request");
             return Unirest.post(endpoint + token + "/answerInlineQuery").field("inline_query_id", inlineId)
                 .field("results", "[]").field("switch_pm_text", "Получить тему")
                     .asJson();
@@ -83,7 +88,7 @@ public class SIBot {
         }
 
         public void start() {
-            System.out.println("[SIBOT] Starting loop");
+            log.debug("[SIBOT] Starting loop");
             int last_update_id = 0;
 
             HttpResponse<JsonNode> response;
@@ -92,7 +97,7 @@ public class SIBot {
                 try {
                     response = getUpdates(last_update_id++);
                 } catch (UnirestException e) {
-                    System.out.println("[SIBOT] Can not get updates: " + e);
+                    log.error("[SIBOT] Can not get updates!", e);
                 }
 
                 if (response != null && response.getStatus() == 200) {
@@ -103,7 +108,7 @@ public class SIBot {
                         last_update_id = responses.getJSONObject(responses.length() - 1).getInt("update_id") + 1;
                     }
 
-                    System.out.println("[SIBOT] Got something");
+                    log.debug("[SIBOT] Got something");
                     for (int i = 0; i < responses.length(); ++i) {
                         final JSONObject message = responses.getJSONObject(i).optJSONObject("message");
                         final JSONObject inline = responses.getJSONObject(i).optJSONObject("inline_query");
@@ -148,7 +153,7 @@ public class SIBot {
                 final String reply = "Версия бота: 1.2.0\n/ask - случайная тема свояка из базы db.chgk.info";
                 sendMessage(chatId, reply);
             } catch (UnirestException e) {
-                System.out.println("[SIBOT] Can not send question! " + e.toString());
+                log.error("[SIBOT] Can not send question!", e);
             }
         }
 
@@ -160,9 +165,9 @@ public class SIBot {
                     updateCache(CACHE_UPDATE_PORTION);
                 }
             } catch (IOException e) {
-                System.out.println("[SIBOT] Can not get question! " + e.toString());
+                log.error("[SIBOT] Can not get question!", e);
             } catch (UnirestException e) {
-                System.out.println("[SIBOT] Can not send question! " + e.toString());
+                log.error("[SIBOT] Can not send question!", e);
             }
         }
 
@@ -174,9 +179,9 @@ public class SIBot {
                     updateCache(CACHE_UPDATE_PORTION);
                 }
             } catch (IOException e) {
-                System.out.println("[SIBOT] Can not get question! " + e.toString());
+                log.error("[SIBOT] Can not get question!", e);
             } catch (UnirestException e) {
-                System.out.println("[SIBOT] Can not send question! " + e.toString());
+                log.error("[SIBOT] Can not send question!", e);
             }
         }
 
@@ -185,7 +190,7 @@ public class SIBot {
             final Elements questions = doc.getElementsByClass("random_question");
             final StringBuilder message = new StringBuilder();
             if (questions.isEmpty()) {
-                System.out.println("[SIBOT] Can not parse question!");
+                log.warn("[SIBOT] Can not parse question!");
             } else {
                 message.append(Jsoup.clean(questions.get(0).toString(), "", Whitelist.none(),
                         new Document.OutputSettings().prettyPrint(false)).replace("&nbsp;", ""));
@@ -199,7 +204,7 @@ public class SIBot {
                     + themesToLoad).get();
             final Elements questions = doc.getElementsByClass("random_question");
             if (questions.isEmpty()) {
-                System.out.println("[SIBOT] Can not parse question!");
+                log.warn("[SIBOT] Can not parse question!");
             } else {
                 final List<String> temp = new LinkedList<>();
                 for (Element question : questions) {

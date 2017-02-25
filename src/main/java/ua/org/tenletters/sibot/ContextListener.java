@@ -5,7 +5,12 @@ import ua.org.tenletters.sibot.SIBot;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 public class ContextListener implements ServletContextListener {
+
+    private static final Logger log = LogManager.getLogger("ContextListener");
 
     private BotThread botThread = null;
 
@@ -24,7 +29,7 @@ public class ContextListener implements ServletContextListener {
                 botThread.interrupt();
             }
         } catch (Exception ex) {
-            System.out.println("[SIBOT] Can not stop Bot! " + ex.toString());
+            log.error("[SIBOT] Can not stop Bot!", ex);
         }
     }
   
