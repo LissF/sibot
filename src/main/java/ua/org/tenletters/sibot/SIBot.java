@@ -4,6 +4,15 @@ import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
+
+import javax.net.ssl.*;
+import java.io.IOException;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.jsoup.Jsoup;
@@ -11,17 +20,18 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.safety.Whitelist;
 import org.jsoup.select.Elements;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
 
 public class SIBot {
 
@@ -91,6 +101,13 @@ public class SIBot {
             log.debug("[SIBOT] Starting loop");
             int last_update_id = 0;
 
+            try {
+                enableSSLSocket();
+            } catch (Exception e) {
+                log.error("[SIBOT] Can not enable SSL Socket!", e);
+            }
+
+
             HttpResponse<JsonNode> response;
             while (!isStopped) {
                 response = null;
@@ -150,7 +167,7 @@ public class SIBot {
 
         private void onStartCommand(final int chatId) {
             try {
-                final String reply = "Версия бота: 1.2.0\n/ask - случайная тема свояка из базы db.chgk.info";
+                final String reply = "Версия бота: 1.2.1\n/ask - случайная тема свояка из базы db.chgk.info";
                 sendMessage(chatId, reply);
             } catch (UnirestException e) {
                 log.error("[SIBOT] Can not send question!", e);
@@ -186,7 +203,10 @@ public class SIBot {
         }
 
         private String getRandomTheme() throws IOException {
-            final Document doc = Jsoup.connect("http://db.chgk.info/random/from_2000-01-01/types5/limit1").get();
+            final Document doc = Jsoup.connect("https://db.chgk.info/random/from_2000-01-01/types5/limit1")
+                    .ignoreHttpErrors(true)
+                    .validateTLSCertificates(true)
+                    .get();
             final Elements questions = doc.getElementsByClass("random_question");
             final StringBuilder message = new StringBuilder();
             if (questions.isEmpty()) {
@@ -214,5 +234,27 @@ public class SIBot {
                 cache.addAll(temp);
             }
             cacheIsLocked = false;
+        }
+        
+        public static void enableSSLSocket() throws KeyManagementException, NoSuchAlgorithmException {
+            HttpsURLConnection.setDefaultHostnameVerifier(new HostnameVerifier() {
+                public boolean verify(String hostname, SSLSession session) {
+                    return true;
+                }
+            });
+     
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, new X509TrustManager[]{new X509TrustManager() {
+                public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                }
+ 
+                public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                }
+ 
+                public X509Certificate[] getAcceptedIssuers() {
+                    return new X509Certificate[0];
+                }
+            }}, new SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(context.getSocketFactory());
         }
 }
