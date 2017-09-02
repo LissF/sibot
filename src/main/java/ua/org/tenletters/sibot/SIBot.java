@@ -107,7 +107,6 @@ public class SIBot {
                 log.error("[SIBOT] Can not enable SSL Socket!", e);
             }
 
-
             HttpResponse<JsonNode> response;
             while (!isStopped) {
                 response = null;
@@ -220,8 +219,10 @@ public class SIBot {
 
         private synchronized void updateCache(final int themesToLoad) throws IOException {
             cacheIsLocked = true;
-            final Document doc = Jsoup.connect("http://db.chgk.info/random/from_2000-01-01/types5/limit"
-                    + themesToLoad).get();
+            final Document doc = Jsoup.connect("https://db.chgk.info/random/from_2000-01-01/types5/limit" + themesToLoad)
+			        .ignoreHttpErrors(true)
+                    .validateTLSCertificates(true)
+                    .get()
             final Elements questions = doc.getElementsByClass("random_question");
             if (questions.isEmpty()) {
                 log.warn("[SIBOT] Can not parse question!");
